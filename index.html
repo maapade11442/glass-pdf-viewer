@@ -1,0 +1,718 @@
+<!DOCTYPE html>
+<html lang="th">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Glassmorphism PDF Viewer</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Google Fonts (Kanit & Inter) -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Kanit:wght@200;300;400;500;600;700&display=swap"
+        rel="stylesheet">
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <!-- PDF.js สำหรับการเรนเดอร์ PDF ลงบน Canvas โดยตรงเพื่อเลี่ยงการบล็อกของ Chrome -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+
+    <style>
+        body {
+            font-family: 'Kanit', 'Inter', sans-serif;
+        }
+
+        /* อนิเมชั่นสำหรับพื้นหลังทรงกลมเรืองแสง */
+        @keyframes float {
+
+            0%,
+            100% {
+                transform: translateY(0px) scale(1);
+            }
+
+            50% {
+                transform: translateY(-30px) scale(1.1);
+            }
+        }
+
+        @keyframes float-reverse {
+
+            0%,
+            100% {
+                transform: translateY(0px) scale(1.1);
+            }
+
+            50% {
+                transform: translateY(30px) scale(1);
+            }
+        }
+
+        .animate-blob-1 {
+            animation: float 12s ease-in-out infinite;
+        }
+
+        .animate-blob-2 {
+            animation: float-reverse 16s ease-in-out infinite;
+        }
+
+        /* สไตล์ Glassmorphism เสริม */
+        .glass-panel {
+            background: rgba(255, 255, 255, 0.08);
+            backdrop-filter: blur(16px) saturate(120%);
+            -webkit-backdrop-filter: blur(16px) saturate(120%);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+        }
+
+        .glass-card {
+            background: rgba(255, 255, 255, 0.06);
+            backdrop-filter: blur(25px) saturate(180%);
+            -webkit-backdrop-filter: blur(25px) saturate(180%);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+        }
+
+        .glass-input {
+            background: rgba(255, 255, 255, 0.03);
+            backdrop-filter: blur(5px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+        }
+
+        /* ซ่อน Scrollbar ของเว็บเพจหลัก */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: rgba(255, 255, 255, 0.03);
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.15);
+            border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: rgba(255, 255, 255, 0.3);
+        }
+    </style>
+</head>
+
+<body
+    class="min-h-screen bg-slate-950 text-slate-100 flex flex-col justify-between items-center p-4 md:p-8 relative overflow-x-hidden">
+
+    <!-- ทรงกลมเรืองแสงด้านหลัง เพื่อสร้างมิติให้กระจกฝ้า (Background Glow Blobs) -->
+    <div
+        class="absolute top-[10%] left-[15%] w-72 md:w-96 h-72 md:h-96 rounded-full bg-indigo-600/20 filter blur-[80px] md:blur-[120px] animate-blob-1 pointer-events-none">
+    </div>
+    <div
+        class="absolute bottom-[15%] right-[15%] w-80 md:w-[450px] h-80 md:h-[450px] rounded-full bg-fuchsia-600/15 filter blur-[90px] md:blur-[140px] animate-blob-2 pointer-events-none">
+    </div>
+    <div class="absolute top-[50%] left-[45%] w-60 md:w-80 h-60 md:h-80 rounded-full bg-cyan-500/15 filter blur-[80px] md:blur-[100px] animate-blob-1 pointer-events-none"
+        style="animation-delay: -3s;"></div>
+
+    <!-- ส่วนหัวแอปพลิเคชัน (Header) -->
+    <header class="w-full max-w-4xl z-10 mb-6 flex justify-between items-center">
+        <div class="flex items-center gap-3">
+            <div
+                class="w-10 h-10 rounded-xl bg-gradient-to-tr from-indigo-500 to-fuchsia-500 flex items-center justify-center shadow-lg shadow-indigo-500/30">
+                <i data-lucide="file-text" class="w-5 h-5 text-white"></i>
+            </div>
+            <div>
+                <h1
+                    class="text-xl font-bold tracking-wide bg-gradient-to-r from-white to-slate-300 bg-clip-text text-transparent">
+                    GlassPDF</h1>
+                <p class="text-[10px] text-slate-400 font-light tracking-widest uppercase">Safe Local Reader</p>
+            </div>
+        </div>
+        <div class="text-xs text-slate-400 glass-panel px-3 py-1.5 rounded-full flex items-center gap-1.5">
+            <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+            ทำงานบนบราวเซอร์ 100% (No Frame Blocks)
+        </div>
+    </header>
+
+    <!-- คอนเทนเนอร์หลัก (Main Dashboard) -->
+    <main class="w-full max-w-4xl flex-1 flex flex-col justify-center items-center z-10 my-4">
+
+        <!-- แดชบอร์ดสไตล์ Glassmorphism -->
+        <div id="dropZone"
+            class="w-full glass-card rounded-3xl p-6 md:p-10 text-center relative overflow-hidden transition-all duration-300 border border-white/10 hover:border-white/20 shadow-[0_8px_32px_0_rgba(0,0,0,0.5)] group">
+
+            <!-- ตกแต่งขอบไฟด้านบน -->
+            <div
+                class="absolute top-0 left-0 right-0 h-[1px] bg-gradient-to-r from-transparent via-white/20 to-transparent">
+            </div>
+
+            <div class="flex flex-col items-center max-w-2xl mx-auto">
+                <!-- ไอคอนเอกสารลอยตัว -->
+                <div class="relative mb-5">
+                    <div
+                        class="w-16 h-16 md:w-20 md:h-20 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center transition-transform duration-500 group-hover:scale-105 group-hover:rotate-3 backdrop-blur-md">
+                        <i data-lucide="file-up"
+                            class="w-8 h-8 md:w-10 md:h-10 text-indigo-400 group-hover:text-fuchsia-400 transition-colors duration-300"></i>
+                    </div>
+                    <!-- เงาสะท้อนใต้ไอคอน -->
+                    <div
+                        class="absolute -bottom-2 left-1/2 -translate-x-1/2 w-14 h-2 bg-indigo-500/20 blur-md rounded-full">
+                    </div>
+                </div>
+
+                <h2 class="text-2xl md:text-3xl font-semibold mb-3 tracking-wide text-white">เปิดไฟล์ PDF
+                    ภายในแอปพลิเคชัน</h2>
+                <p class="text-xs md:text-sm text-slate-300 mb-6 font-light leading-relaxed max-w-lg">
+                    สัมผัสประสบการณ์การอ่านไฟล์สไตล์กระจกฝ้าที่หรูหรา โดยเลือกใช้งานจากไฟล์ตัวอย่าง
+                    หรืออัปโหลดเอกสารส่วนตัวของคุณได้จากเมนูด้านล่างนี้
+                </p>
+
+                <!-- โซนปุ่มควบคุมการเปิดไฟล์ -->
+                <div class="flex flex-col gap-5 w-full max-w-xl mx-auto">
+
+                    <!-- แผงปุ่มสำหรับไฟล์ตัวอย่าง 3 แบบ -->
+                    <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 w-full">
+
+                        <!-- ตัวอย่างที่ 1: รายงานระบบ -->
+                        <button id="btnSample1"
+                            class="group/btn flex flex-col items-center justify-center gap-2 p-3.5 rounded-2xl glass-panel hover:bg-white/10 text-slate-200 hover:text-white transition-all duration-300 hover:scale-[1.03] active:scale-95">
+                            <div
+                                class="w-8 h-8 rounded-lg bg-indigo-500/10 flex items-center justify-center border border-indigo-500/20 group-hover/btn:bg-indigo-500/20 transition-all">
+                                <i data-lucide="file-bar-chart-2" class="w-4 h-4 text-indigo-400"></i>
+                            </div>
+                            <span class="text-[11px] md:text-xs font-medium">รายงานระบบ</span>
+                        </button>
+
+                        <!-- ตัวอย่างที่ 2: ใบกำกับภาษี -->
+                        <button id="btnSample2"
+                            class="group/btn flex flex-col items-center justify-center gap-2 p-3.5 rounded-2xl glass-panel hover:bg-white/10 text-slate-200 hover:text-white transition-all duration-300 hover:scale-[1.03] active:scale-95">
+                            <div
+                                class="w-8 h-8 rounded-lg bg-emerald-500/10 flex items-center justify-center border border-emerald-500/20 group-hover/btn:bg-emerald-500/20 transition-all">
+                                <i data-lucide="receipt" class="w-4 h-4 text-emerald-400"></i>
+                            </div>
+                            <span class="text-[11px] md:text-xs font-medium">ใบกำกับภาษี / Invoice</span>
+                        </button>
+
+                        <!-- ตัวอย่างที่ 3: กำหนดการกิจกรรม -->
+                        <button id="btnSample3"
+                            class="group/btn flex flex-col items-center justify-center gap-2 p-3.5 rounded-2xl glass-panel hover:bg-white/10 text-slate-200 hover:text-white transition-all duration-300 hover:scale-[1.03] active:scale-95">
+                            <div
+                                class="w-8 h-8 rounded-lg bg-amber-500/10 flex items-center justify-center border border-amber-500/20 group-hover/btn:bg-amber-500/20 transition-all">
+                                <i data-lucide="calendar-days" class="w-4 h-4 text-amber-400"></i>
+                            </div>
+                            <span class="text-[11px] md:text-xs font-medium">กำหนดการกิจกรรม</span>
+                        </button>
+
+                    </div>
+
+                    <!-- ตัวแบ่งเส้นขีดแสดงส่วนไฟล์จำลอง -->
+                    <div class="flex items-center gap-3 w-full my-1">
+                        <div class="h-[1px] flex-1 bg-white/10"></div>
+                        <span
+                            class="text-[10px] md:text-xs text-slate-400 font-light tracking-wider uppercase">หรือใช้งานด้วยไฟล์เอกสารของคุณเอง</span>
+                        <div class="h-[1px] flex-1 bg-white/10"></div>
+                    </div>
+
+                    <!-- ปุ่มเปิดไฟล์จริงจากเครื่อง -->
+                    <label
+                        class="cursor-pointer group/btn relative flex items-center justify-center gap-2 px-6 py-4 rounded-2xl bg-gradient-to-r from-indigo-600 to-indigo-500 hover:from-indigo-500 hover:to-fuchsia-500 text-white font-medium text-sm md:text-base tracking-wide shadow-lg shadow-indigo-600/25 transition-all duration-300 hover:scale-[1.02] active:scale-95">
+                        <i data-lucide="upload-cloud" class="w-5 h-5"></i>
+                        <span>เลือกไฟล์ PDF จากเครื่องของคุณ</span>
+                        <input type="file" id="fileInput" accept=".pdf" class="hidden">
+                    </label>
+
+                </div>
+
+                <!-- ข้อมูลความปลอดภัยเพิ่มเติม -->
+                <div
+                    class="mt-8 flex items-center gap-2 text-[11px] text-slate-400 font-light glass-input px-4 py-2 rounded-xl border border-white/5">
+                    <i data-lucide="shield-check" class="w-4 h-4 text-emerald-400"></i>
+                    <span>เรนเดอร์ผ่าน HTML5 Canvas ปลอดภัย ไม่ผ่านโปรแกรมเสริม ป้องกันเบราว์เซอร์บล็อก</span>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- ส่วนท้ายแอปพลิเคชัน (Footer) -->
+    <footer class="w-full max-w-4xl text-center text-slate-500 text-xs mt-6 z-10">
+        <p>© 2026 GlassPDF Reader. ออกแบบด้วยดีไซน์อันล้ำสมัยสไตล์ Glassmorphic UI</p>
+    </footer>
+
+    <!-- หน้าต่างอ่าน PDF (Glassmorphic Modal Viewer พร้อม Custom Toolbar) -->
+    <div id="pdfModal"
+        class="fixed inset-0 z-50 flex items-center justify-center p-3 md:p-6 opacity-0 pointer-events-none transition-all duration-500 ease-out">
+        <!-- ฉากหลังที่เบลอสูงมากสะท้อนธีมแอป -->
+        <div id="modalOverlay" class="absolute inset-0 bg-slate-950/60 backdrop-blur-xl"></div>
+
+        <!-- ตัวแผงเอกสารโปร่งแสง (Modal Content) -->
+        <div
+            class="relative w-full max-w-5xl h-[90vh] glass-card rounded-3xl overflow-hidden flex flex-col shadow-[0_24px_50px_-12px_rgba(0,0,0,0.8)] border border-white/20 transform scale-95 transition-all duration-500">
+
+            <!-- ขอบไฟด้านบนใน Modal -->
+            <div
+                class="absolute top-0 left-0 right-0 h-[1.5px] bg-gradient-to-r from-transparent via-indigo-500 to-fuchsia-500">
+            </div>
+
+            <!-- ส่วนควบคุมด้านบน (Header Bar ของ Viewer) -->
+            <div
+                class="p-4 md:px-6 bg-slate-950/50 backdrop-blur-md flex flex-wrap justify-between items-center border-b border-white/10 z-10 gap-3">
+                <div class="flex items-center gap-3 min-w-0">
+                    <div
+                        class="w-8 h-8 rounded-lg bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center flex-shrink-0">
+                        <i data-lucide="file-text" class="w-4 h-4 text-indigo-400"></i>
+                    </div>
+                    <div class="min-w-0">
+                        <h3 id="pdfFileName" class="text-sm font-semibold truncate text-white">เอกสารไม่มีชื่อ.pdf</h3>
+                        <p id="pdfFileSize" class="text-[10px] text-slate-400 font-light">กำลังประมวลผลผ่าน Canvas
+                            Reader</p>
+                    </div>
+                </div>
+
+                <!-- Custom PDF Controls -->
+                <div
+                    class="flex items-center gap-2 md:gap-4 glass-panel px-3 py-1.5 rounded-2xl border border-white/10">
+                    <!-- เลื่อนหน้าถอยหลัง -->
+                    <button id="prevPage"
+                        class="p-1.5 rounded-lg hover:bg-white/10 text-slate-300 hover:text-white transition-colors"
+                        title="หน้าก่อนหน้า">
+                        <i data-lucide="chevron-left" class="w-4 h-4"></i>
+                    </button>
+                    <!-- ตัวนับหน้า -->
+                    <span class="text-xs text-slate-300 font-medium">
+                        หน้า <span id="pageNum" class="text-white">1</span> / <span id="pageCount"
+                            class="text-slate-400">1</span>
+                    </span>
+                    <!-- เลื่อนหน้าเดินหน้า -->
+                    <button id="nextPage"
+                        class="p-1.5 rounded-lg hover:bg-white/10 text-slate-300 hover:text-white transition-colors"
+                        title="หน้าถัดไป">
+                        <i data-lucide="chevron-right" class="w-4 h-4"></i>
+                    </button>
+
+                    <div class="w-[1px] h-4 bg-white/20"></div>
+
+                    <!-- ซูมออก -->
+                    <button id="zoomOut"
+                        class="p-1.5 rounded-lg hover:bg-white/10 text-slate-300 hover:text-white transition-colors"
+                        title="ซูมออก">
+                        <i data-lucide="zoom-out" class="w-4 h-4"></i>
+                    </button>
+                    <span id="zoomPercent"
+                        class="text-[11px] text-slate-300 font-medium min-w-[36px] text-center">100%</span>
+                    <!-- ซูมเข้า -->
+                    <button id="zoomIn"
+                        class="p-1.5 rounded-lg hover:bg-white/10 text-slate-300 hover:text-white transition-colors"
+                        title="ซูมเข้า">
+                        <i data-lucide="zoom-in" class="w-4 h-4"></i>
+                    </button>
+
+                    <!-- ปรับพอดีหน้าจอ -->
+                    <button id="zoomFit"
+                        class="p-1.5 rounded-lg hover:bg-white/10 text-slate-300 hover:text-white transition-colors"
+                        title="ปรับขนาดให้พอดีหน้าจอ">
+                        <i data-lucide="maximize" class="w-4 h-4"></i>
+                    </button>
+                </div>
+
+                <!-- ปุ่มปิดหน้าต่าง -->
+                <div class="flex items-center gap-2">
+                    <button id="btnCloseModal"
+                        class="w-9 h-9 rounded-xl glass-panel hover:bg-rose-500/20 hover:border-rose-500/30 flex items-center justify-center text-slate-400 hover:text-rose-400 transition-all duration-200">
+                        <i data-lucide="x" class="w-4 h-4"></i>
+                    </button>
+                </div>
+            </div>
+
+            <!-- พื้นที่แสดงเอกสาร PDF (HTML5 Canvas Container มีโครงสร้างจัดรูปแบบกึ่งกลางแบบยืดหยุ่น ป้องกันตัดขอบ) -->
+            <div class="flex-1 bg-slate-900/40 relative overflow-auto p-4 md:p-8 flex justify-center items-start"
+                id="canvasContainer">
+                <!-- วงแหวนดาวน์โหลดขณะกำลังโหลดไฟล์ (คลุมทับแยก Layer) -->
+                <div id="loader"
+                    class="absolute inset-0 flex flex-col items-center justify-center gap-3 text-slate-400 bg-slate-950/60 backdrop-blur-sm z-20">
+                    <div class="w-10 h-10 border-4 border-indigo-500/20 border-t-indigo-500 rounded-full animate-spin">
+                    </div>
+                    <p class="text-xs font-light">กำลังประมวลผลพิกเซลเอกสาร...</p>
+                </div>
+
+                <!-- พื้นหลังรองรับ Canvas ป้องกันการล้นขอบจออย่างไร้ที่ติและปรับสมดุลจัดหน้ากระดาษ -->
+                <div class="shadow-2xl shadow-black/60 rounded-lg overflow-hidden transition-all duration-200 bg-white my-auto z-10 max-w-full"
+                    id="canvasWrapper">
+                    <canvas id="pdfCanvas" class="block max-w-full h-auto"></canvas>
+                </div>
+            </div>
+
+            <!-- ส่วนแจ้งเตือนและปิดด่านล่าง (Footer ของ Viewer) -->
+            <div
+                class="px-6 py-3.5 bg-slate-950/50 flex flex-col sm:flex-row justify-between items-center border-t border-white/10 gap-2 text-xs text-slate-400 z-10">
+                <div class="flex items-center gap-1.5 font-light">
+                    <i data-lucide="shield-alert" class="w-4 h-4 text-emerald-400"></i>
+                    <span>ระบบป้องกันการปิดกั้น Sandbox: ทำงานร่วมกับ Chrome ได้อย่างเสถียร</span>
+                </div>
+                <button id="btnFooterClose"
+                    class="text-slate-300 hover:text-white transition-colors duration-200 font-medium">
+                    ปิดหน้าต่างเอกสาร
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // เรียกใช้งานไอคอนลูไซด์ทั้งหมด
+        lucide.createIcons();
+
+        // ตั้งค่า PDF.js Worker จาก CDN เพื่อประมวลผลไฟล์เบื้องหลังแบบอะซิงโครนัส
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+        // ตัวแปรควบคุมระบบ PDF.js State
+        let currentPdfDoc = null;
+        let currentPageNum = 1;
+        let isPageRendering = false;
+        let pendingPageNum = null;
+        let currentScale = 1.0; // ค่าเริ่มต้น (จะถูกคำนวณใหม่โดยอัตโนมัติ)
+
+        const pdfCanvas = document.getElementById('pdfCanvas');
+        const ctx = pdfCanvas.getContext('2d');
+        const canvasWrapper = document.getElementById('canvasWrapper');
+
+        // ตัวแปรและ Element ต่างๆ ใน DOM
+        const fileInput = document.getElementById('fileInput');
+        const btnSample1 = document.getElementById('btnSample1');
+        const btnSample2 = document.getElementById('btnSample2');
+        const btnSample3 = document.getElementById('btnSample3');
+        const pdfModal = document.getElementById('pdfModal');
+        const modalContent = pdfModal.querySelector('.glass-card');
+        const modalOverlay = document.getElementById('modalOverlay');
+        const btnCloseModal = document.getElementById('btnCloseModal');
+        const btnFooterClose = document.getElementById('btnFooterClose');
+        const loader = document.getElementById('loader');
+        const pdfFileName = document.getElementById('pdfFileName');
+        const pdfFileSize = document.getElementById('pdfFileSize');
+        const dropZone = document.getElementById('dropZone');
+        const canvasContainer = document.getElementById('canvasContainer');
+
+        // ตัวแปรปุ่มควบคุมหน้าเว็บ
+        const prevPageBtn = document.getElementById('prevPage');
+        const nextPageBtn = document.getElementById('nextPage');
+        const pageNumDisplay = document.getElementById('pageNum');
+        const pageCountDisplay = document.getElementById('pageCount');
+        const zoomInBtn = document.getElementById('zoomIn');
+        const zoomOutBtn = document.getElementById('zoomOut');
+        const zoomFitBtn = document.getElementById('zoomFit');
+        const zoomPercentDisplay = document.getElementById('zoomPercent');
+
+        // ฟังก์ชันคำนวณขนาดที่เหมาะสมให้สอดคล้องกับขนาดหน้าต่างของผู้ใช้งานในปัจจุบัน
+        function calculateFitScale(page) {
+            const padding = window.innerWidth < 768 ? 32 : 64; // กำหนดขอบเขตระยะห่างตามอุปกรณ์
+            const containerWidth = canvasContainer.clientWidth - padding;
+            const viewport = page.getViewport({ scale: 1.0 });
+            const fitScale = containerWidth / viewport.width;
+
+            // จำกัดขอบเขตของสเกลให้อ่านง่าย สบายตา (ไม่เล็กต่ำกว่า 40% และไม่ใหญ่เกิน 250%)
+            return Math.min(Math.max(fitScale, 0.4), 2.5);
+        }
+
+        // ฟังก์ชันในการประมวลผลวาดหน้าเอกสาร PDF ลงบน Canvas
+        function renderPdfPage(num) {
+            isPageRendering = true;
+            loader.classList.remove('hidden');
+
+            // ดึงข้อมูลหน้าเอกสารที่ต้องการ
+            currentPdfDoc.getPage(num).then((page) => {
+                const viewport = page.getViewport({ scale: currentScale });
+
+                // ตั้งค่าขนาดพิกเซลของแคนวาสสำหรับการเรนเดอร์ความละเอียดสูง
+                pdfCanvas.height = viewport.height;
+                pdfCanvas.width = viewport.width;
+
+                const renderContext = {
+                    canvasContext: ctx,
+                    viewport: viewport
+                };
+
+                // วาดกราฟิกลงบนหน้าจอจริง
+                const renderTask = page.render(renderContext);
+
+                renderTask.promise.then(() => {
+                    isPageRendering = false;
+                    loader.classList.add('hidden');
+
+                    // ปรับสไตล์เพื่อสร้างเอฟเฟกต์กระดาษลอยขึ้นมาอย่างนุ่มนวล
+                    canvasWrapper.classList.remove('opacity-0');
+
+                    // ตรวจสอบว่ามีการคิวหน้าถัดไปไว้หรือไม่
+                    if (pendingPageNum !== null) {
+                        renderPdfPage(pendingPageNum);
+                        pendingPageNum = null;
+                    }
+                });
+            }).catch(err => {
+                console.error("Render Page Error: ", err);
+                loader.classList.add('hidden');
+            });
+
+            // ปรับปรุงหมายเลขหน้าในแผงความคุ้มครอง
+            pageNumDisplay.textContent = num;
+            updateControlButtons();
+        }
+
+        // คิวสำหรับการป้องกัน Render ขัดจังหวะกัน (Race Condition)
+        function queueRenderPage(num) {
+            if (isPageRendering) {
+                pendingPageNum = num;
+            } else {
+                renderPdfPage(num);
+            }
+        }
+
+        // ฟังก์ชันเมื่อเปลี่ยนสถานะปุ่ม
+        function updateControlButtons() {
+            if (!currentPdfDoc) return;
+
+            // ปุ่มก่อนหน้า
+            if (currentPageNum <= 1) {
+                prevPageBtn.disabled = true;
+                prevPageBtn.classList.add('opacity-40', 'cursor-not-allowed');
+            } else {
+                prevPageBtn.disabled = false;
+                prevPageBtn.classList.remove('opacity-40', 'cursor-not-allowed');
+            }
+
+            // ปุ่มถัดไป
+            if (currentPageNum >= currentPdfDoc.numPages) {
+                nextPageBtn.disabled = true;
+                nextPageBtn.classList.add('opacity-40', 'cursor-not-allowed');
+            } else {
+                nextPageBtn.disabled = false;
+                nextPageBtn.classList.remove('opacity-40', 'cursor-not-allowed');
+            }
+
+            // ตัวแสดงอัตราซูม
+            zoomPercentDisplay.textContent = Math.round(currentScale * 100) + '%';
+        }
+
+        // โหลดและเปิดแสดงตัวอย่างเอกสารจาก Raw Binary Data (ArrayBuffer หรือ Blob)
+        function loadPdfData(pdfData, name, size) {
+            pdfFileName.textContent = name;
+            pdfFileSize.textContent = size;
+
+            loader.classList.remove('hidden');
+            canvasWrapper.classList.add('opacity-0');
+
+            // อนิเมชั่นหน้าต่างเด้งแสดงผล Modal
+            pdfModal.classList.remove('opacity-0', 'pointer-events-none');
+            setTimeout(() => {
+                modalContent.classList.remove('scale-95');
+                modalContent.classList.add('scale-100');
+            }, 50);
+
+            // ใช้ PDF.js ดึงเอกสารขึ้นมาทำงาน
+            const loadingTask = pdfjsLib.getDocument({ data: pdfData });
+            loadingTask.promise.then((pdf) => {
+                currentPdfDoc = pdf;
+                currentPageNum = 1;
+                pageCountDisplay.textContent = pdf.numPages;
+
+                // ตรวจสอบขนาดเพื่อคำนวณหา Auto-Fit สเกลที่เหมาะสมที่สุดโดยอัติโนมัติ
+                pdf.getPage(1).then((page) => {
+                    currentScale = calculateFitScale(page);
+                    renderPdfPage(currentPageNum);
+                }).catch(() => {
+                    currentScale = 1.0;
+                    renderPdfPage(currentPageNum);
+                });
+            }).catch((err) => {
+                console.error("PDF Loading Error:", err);
+                loader.classList.add('hidden');
+                showCustomToast('ไม่สามารถเปิดหรือถอดรหัสเอกสาร PDF นี้ได้');
+                closeModal();
+            });
+        }
+
+        // ปุ่มถอยหลังหน้าเอกสาร
+        prevPageBtn.addEventListener('click', () => {
+            if (currentPageNum <= 1) return;
+            currentPageNum--;
+            queueRenderPage(currentPageNum);
+        });
+
+        // ปุ่มเดินหน้าเอกสาร
+        nextPageBtn.addEventListener('click', () => {
+            if (currentPageNum >= currentPdfDoc.numPages) return;
+            currentPageNum++;
+            queueRenderPage(currentPageNum);
+        });
+
+        // ซูมเข้า (Zoom In)
+        zoomInBtn.addEventListener('click', () => {
+            if (currentScale >= 3.0) return; // ลิมิตซูมสูงสุด 300%
+            currentScale += 0.25;
+            queueRenderPage(currentPageNum);
+        });
+
+        // ซูมออก (Zoom Out)
+        zoomOutBtn.addEventListener('click', () => {
+            if (currentScale <= 0.4) return; // ลิมิตซูมต่ำสุด 40%
+            currentScale -= 0.25;
+            queueRenderPage(currentPageNum);
+        });
+
+        // ปรับขนาดความกว้างให้เหมาะสมกับหน้าจออัติโนมัติ (Fit Screen)
+        zoomFitBtn.addEventListener('click', () => {
+            if (!currentPdfDoc) return;
+            currentPdfDoc.getPage(currentPageNum).then((page) => {
+                currentScale = calculateFitScale(page);
+                queueRenderPage(currentPageNum);
+            });
+        });
+
+        // ตรวจจับระบบเมื่อมีการหมุนจอหรือเปลี่ยนขนาด Browser เพื่อปรับหน้า PDF อัตโนมัติ (Debounced Resize)
+        let resizeTimeout;
+        window.addEventListener('resize', () => {
+            if (!currentPdfDoc || pdfModal.classList.contains('pointer-events-none')) return;
+            clearTimeout(resizeTimeout);
+            resizeTimeout = setTimeout(() => {
+                currentPdfDoc.getPage(currentPageNum).then((page) => {
+                    currentScale = calculateFitScale(page);
+                    queueRenderPage(currentPageNum);
+                });
+            }, 250);
+        });
+
+        // ฟังก์ชันในการปิด Modal เพื่อคืนทรัพยากรระบบ
+        function closeModal() {
+            modalContent.classList.remove('scale-100');
+            modalContent.classList.add('scale-95');
+            pdfModal.classList.add('opacity-0', 'pointer-events-none');
+
+            setTimeout(() => {
+                currentPdfDoc = null;
+                currentPageNum = 1;
+                isPageRendering = false;
+                pendingPageNum = null;
+                // เคลียร์แคนวาสว่างเปล่า
+                ctx.clearRect(0, 0, pdfCanvas.width, pdfCanvas.height);
+            }, 500);
+        }
+
+        // จัดการเปิดไฟล์จริงจากเครื่องคอมพิวเตอร์ผ่านการเลือกไฟล์
+        fileInput.addEventListener('change', function (e) {
+            const file = e.target.files[0];
+            if (file) {
+                if (file.type !== 'application/pdf') {
+                    showCustomToast('กรุณาเลือกไฟล์รูปแบบ PDF เท่านั้น');
+                    return;
+                }
+
+                const reader = new FileReader();
+                reader.onload = function (evt) {
+                    const typedarray = new Uint8Array(evt.target.result);
+                    const sizeString = (file.size / (1024 * 1024)).toFixed(2) + ' MB';
+                    loadPdfData(typedarray, file.name, sizeString);
+                };
+                reader.readAsArrayBuffer(file);
+            }
+        });
+
+        // -------------------------------------------------------------
+        // ฟังก์ชันโหลดและเปิดไฟล์ PDF จริงผ่าน URL หรือ Path (NEW 🚀)
+        // -------------------------------------------------------------
+        function loadPdfFromUrl(url, filename, size) {
+            loader.classList.remove('hidden');
+
+            // ใช้ fetch ไปดาวน์โหลดไฟล์ PDF จริงจากเซิร์ฟเวอร์ย่อยของคุณ
+            fetch(url)
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error("ดาวน์โหลดไฟล์ล้มเหลว ตรวจสอบเส้นทางไฟล์ของคุณ");
+                    }
+                    return response.arrayBuffer();
+                })
+                .then(buffer => {
+                    const typedarray = new Uint8Array(buffer);
+                    loadPdfData(typedarray, filename, size);
+                })
+                .catch(err => {
+                    console.error("Fetch PDF Error:", err);
+                    loader.classList.add('hidden');
+                    showCustomToast('ไม่พบไฟล์ PDF หรือถูกบล็อกโดยระบบรักษาความปลอดภัย (CORS)');
+                });
+        }
+
+        // -------------------------------------------------------------
+        // ผูกการทำงานแต่ละปุ่มไปยังไฟล์จริง (กำหนด Path ได้ที่นี่)
+        // -------------------------------------------------------------
+
+        // ปุ่มที่ 1: รายงานระบบ -> ดึงไฟล์จริงจากโฟลเดอร์ pdf/system_report.pdf
+        btnSample1.addEventListener('click', function () {
+            loadPdfFromUrl('pdf/system_report.pdf', 'system_report.pdf', '1.20 MB');
+        });
+
+        // ปุ่มที่ 2: ใบกำกับภาษี -> ดึงไฟล์จริงจากโฟลเดอร์ pdf/corporate_invoice.pdf
+        btnSample2.addEventListener('click', function () {
+            loadPdfFromUrl('pdf/corporate_invoice.pdf', 'corporate_invoice.pdf', '450 KB');
+        });
+
+        // ปุ่มที่ 3: กำหนดการกิจกรรม -> ดึงไฟล์จริงจากโฟลเดอร์ pdf/summit_agenda.pdf
+        btnSample3.addEventListener('click', function () {
+            loadPdfFromUrl('pdf/summit_agenda.pdf', 'summit_agenda.pdf', '890 KB');
+        });
+
+        // การลากและวางเอกสาร (Drag & Drop)
+        ['dragenter', 'dragover'].forEach(eventName => {
+            dropZone.addEventListener(eventName, (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                dropZone.classList.add('border-indigo-500', 'bg-white/10', 'scale-[1.01]');
+            }, false);
+        });
+
+        ['dragleave', 'drop'].forEach(eventName => {
+            dropZone.addEventListener(eventName, (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                dropZone.classList.remove('border-indigo-500', 'bg-white/10', 'scale-[1.01]');
+            }, false);
+        });
+
+        dropZone.addEventListener('drop', (e) => {
+            const dt = e.dataTransfer;
+            const file = dt.files[0];
+            if (file) {
+                if (file.type !== 'application/pdf') {
+                    showCustomToast('กรุณาวางไฟล์ประเภท PDF เท่านั้น');
+                    return;
+                }
+
+                const reader = new FileReader();
+                reader.onload = function (evt) {
+                    const typedarray = new Uint8Array(evt.target.result);
+                    const sizeString = (file.size / (1024 * 1024)).toFixed(2) + ' MB';
+                    loadPdfData(typedarray, file.name, sizeString);
+                };
+                reader.readAsArrayBuffer(file);
+            }
+        });
+
+        // ฟังก์ชันสร้างกล่องข้อความแจ้งเตือนที่กำหนดเอง (แทน alert)
+        function showCustomToast(message) {
+            const toast = document.createElement('div');
+            toast.className = 'fixed bottom-6 left-1/2 -translate-x-1/2 z-50 glass-card px-6 py-3 rounded-2xl flex items-center gap-2 border border-rose-500/30 text-rose-300 shadow-xl shadow-black/40 opacity-0 translate-y-2 transition-all duration-300';
+            toast.innerHTML = `
+                <i data-lucide="alert-triangle" class="w-4 h-4 text-rose-400"></i>
+                <span class="text-sm font-medium">${message}</span>
+            `;
+            document.body.appendChild(toast);
+            lucide.createIcons();
+
+            setTimeout(() => {
+                toast.classList.remove('opacity-0', 'translate-y-2');
+            }, 50);
+
+            setTimeout(() => {
+                toast.classList.add('opacity-0', 'translate-y-2');
+                setTimeout(() => {
+                    toast.remove();
+                }, 300);
+            }, 3000);
+        }
+    </script>
+</body>
+
+</html>
